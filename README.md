@@ -181,6 +181,7 @@ func (l *myLogger) Log(args ...interface{}) {
 The package defaults to `ioutil.Discard` so swallow all logs. This can be customized with the preferred logging strategy:
 
 ```go
+import "log"
 // logger
 log := &myLogger{ logger : log.New(os.Stdout, "consumer-example: ", log.LstdFlags),}
 // consumer
@@ -188,8 +189,10 @@ c, err := consumer.New(streamName, consumer.WithLogger(logger))
 ```
 To use a more complicated logging library, e.g. apex log
 ```
+import alog "github.com/apex/log" 
+
 type myLogger struct {
-    logger *log.Logger
+    logger alog.Logger
 }
 
 func (l *myLogger) Log(args ...interface{}) {
