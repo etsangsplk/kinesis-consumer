@@ -5,6 +5,7 @@ import (
 	"expvar"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -19,9 +20,16 @@ import (
 
 	alog "github.com/apex/log"
 	"github.com/apex/log/handlers/text"
+	opentracing "github.com/opentracing/opentracing-go"
 
 	consumer "github.com/harlow/kinesis-consumer"
 	checkpoint "github.com/harlow/kinesis-consumer/checkpoint/ddb"
+	tracing "github.com/harlow/kinesis-consumer/examples/tracing"
+)
+
+var (
+	globalTracer       opentracing.Tracer
+	globalTracerCloser io.Closer
 )
 
 // kick off a server for exposing scan metrics
@@ -30,6 +38,10 @@ func init() {
 	if err != nil {
 		log.Printf("net listen error: %v", err)
 	}
+
+	globalTracer, globalTracerCloser = tracing.NewTracer("consumer", "localhost")
+	opentracing.SetGlobalTracer(globalTracer)
+
 	go func() {
 		fmt.Println("Metrics available at http://localhost:8080/debug/vars")
 		http.Serve(sock, nil)
@@ -47,6 +59,9 @@ func (l *myLogger) Log(args ...interface{}) {
 }
 
 func main() {
+	// Shut down tracer and ensure any inmemeory trace data be flushed.
+	defer globalTracerCloser.Close()
+
 	// Wrap myLogger around  apex logger
 	log := &myLogger{
 		logger: alog.Logger{
@@ -61,6 +76,10 @@ func main() {
 		table  = flag.String("table", "", "Checkpoint table name")
 	)
 	flag.Parse()
+
+	span := globalTracer.StartSpan("Scan Shard", opentracing.Tag{"stream.name", stream})
+	defer span.Finish()
+	ctx := opentracing.ContextWithSpan(context.Background(), span)
 
 	// Following will overwrite the default dynamodb client
 	// Older versions of aws sdk does not picking up aws config properly.

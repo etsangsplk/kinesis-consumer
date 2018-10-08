@@ -12,6 +12,9 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
+
+	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
 )
 
 // Option is used to override defaults when creating a new Checkpoint
@@ -89,12 +92,22 @@ type item struct {
 // Typically used to determine whether we should start processing the shard with
 // TRIM_HORIZON or AFTER_SEQUENCE_NUMBER (if checkpoint exists).
 func (c *Checkpoint) Get(streamName, shardID string) (string, error) {
-	return c.GetWithContext(context.Background(), streamName, shardID)
+	counter := 0
+	return c.GetWithContext(context.Background(), streamName, shardID, counter)
 }
 
 // GetWithContext is just Get taking in context also.
-func (c *Checkpoint) GetWithContext(ctx context.Context, streamName, shardID string) (string, error) {
+func (c *Checkpoint) GetWithContext(ctx context.Context, streamName, shardID string, counter int) (string, error) {
+	span, _ := opentracing.StartSpanFromContext(ctx, "Get Item From DynamoDb",
+		opentracing.Tag{"stream.name", streamName})
+	defer span.Finish()
+
 	namespace := fmt.Sprintf("%s-%s", c.appName, streamName)
+
+	span.SetTag("namespace", namespace)
+	span.SetTag("table.name", c.tableName)
+	span.SetTag("shardID", shardID)
+	span.SetTag("retried.count", counter)
 
 	params := &dynamodb.GetItemInput{
 		TableName:      aws.String(c.tableName),
@@ -112,8 +125,10 @@ func (c *Checkpoint) GetWithContext(ctx context.Context, streamName, shardID str
 	resp, err := c.client.GetItemWithContext(ctx, params)
 	if err != nil {
 		if c.retryer.ShouldRetry(err) {
-			return c.Get(streamName, shardID)
+			counter = counter + 1
+			return c.GetWithContext(ctx, streamName, shardID, counter)
 		}
+		ext.Error.Set(span, true)
 		return "", err
 	}
 

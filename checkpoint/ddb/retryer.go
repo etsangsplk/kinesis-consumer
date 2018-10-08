@@ -1,6 +1,8 @@
 package ddb
 
 import (
+	"fmt"
+
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 )
@@ -16,11 +18,16 @@ type DefaultRetryer struct {
 
 func (r *DefaultRetryer) ShouldRetry(err error) bool {
 	if r != nil {
-		if awsErr, ok := err.(awserr.Error); ok {
+		awsErr, ok := err.(awserr.Error)
+		if ok {
 			if awsErr.Code() == dynamodb.ErrCodeProvisionedThroughputExceededException {
+
 				return true
 			}
+			fmt.Printf("awsErr: %#v", awsErr.Code())
 		}
+		fmt.Printf("awsErr: %#v", awsErr)
+
 	}
 	return false
 }

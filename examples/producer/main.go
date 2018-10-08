@@ -31,11 +31,12 @@ func init() {
 	svc = kinesis.New(session.New(), &aws.Config{
 		Region: aws.String("us-west-1"),
 	})
-	globalTracer, globalTracerCloser = tracing.NewTracer("producer")
+	globalTracer, globalTracerCloser = tracing.NewTracer("producer", "localhost")
 	opentracing.SetGlobalTracer(globalTracer)
 }
 
 func main() {
+	// Shut down tracer and ensure any inmemeory trace data be flushed.
 	defer globalTracerCloser.Close()
 
 	var streamName = flag.String("stream", "", "Stream name")
